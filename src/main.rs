@@ -6,8 +6,8 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 use models::Event;
-use workflow::demo;
 use workflow::storage::{EventRepository, Storage, UserRepository, WorkflowRepository};
+use workflow::user_activity_workflow;
 use workflow::PostgresStorage;
 
 #[tokio::main]
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     storage.create_user(user_id, "test user").await?;
 
     // Create and start workflow
-    let mut workflow = demo::create_demo_workflow_with_ids(workflow_id, user_id);
+    let mut workflow = user_activity_workflow::create_demo_workflow_with_ids(workflow_id, user_id);
     storage.save_workflow(&workflow).await?;
 
     // Process user activity event
