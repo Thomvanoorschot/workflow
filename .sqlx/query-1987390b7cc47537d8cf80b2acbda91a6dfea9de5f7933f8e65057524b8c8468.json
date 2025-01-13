@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            CREATE TABLE IF NOT EXISTS workflows (\n                id UUID PRIMARY KEY,\n                user_id UUID NOT NULL REFERENCES users(id),\n                name TEXT NOT NULL,\n                nodes JSONB NOT NULL,\n                edges JSONB NOT NULL,\n                status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'failed')),\n                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,\n                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "1987390b7cc47537d8cf80b2acbda91a6dfea9de5f7933f8e65057524b8c8468"
+}

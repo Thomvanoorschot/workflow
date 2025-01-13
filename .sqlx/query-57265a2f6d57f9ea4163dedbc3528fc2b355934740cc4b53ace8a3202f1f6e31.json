@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            CREATE TABLE IF NOT EXISTS users (\n                id UUID PRIMARY KEY,\n                name TEXT NOT NULL,\n                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "57265a2f6d57f9ea4163dedbc3528fc2b355934740cc4b53ace8a3202f1f6e31"
+}

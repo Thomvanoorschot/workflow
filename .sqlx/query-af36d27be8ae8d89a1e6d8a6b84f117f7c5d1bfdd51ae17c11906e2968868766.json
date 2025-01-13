@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            CREATE INDEX IF NOT EXISTS idx_workflows_user_id ON workflows(user_id)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "af36d27be8ae8d89a1e6d8a6b84f117f7c5d1bfdd51ae17c11906e2968868766"
+}
