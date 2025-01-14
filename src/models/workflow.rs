@@ -1,4 +1,4 @@
-use super::{Event, Node, NodeId, NodeStatus};
+use super::{Event, Node, NodeStatus};
 use bincode::{DefaultOptions, Options};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -55,7 +55,8 @@ impl Workflow {
 
     pub fn process_event(&mut self, event: &Event) {
         // Start with all active nodes
-        let active_nodes: Vec<_> = self.nodes
+        let active_nodes: Vec<_> = self
+            .nodes
             .iter()
             .enumerate()
             .filter(|(_, node)| node.status == NodeStatus::Active)
@@ -68,7 +69,11 @@ impl Workflow {
         }
 
         // Check if workflow is completed
-        if self.nodes.iter().all(|node| node.status == NodeStatus::Completed) {
+        if self
+            .nodes
+            .iter()
+            .all(|node| node.status == NodeStatus::Completed)
+        {
             println!("Workflow completed!");
             self.status = WorkflowStatus::Completed;
         }
