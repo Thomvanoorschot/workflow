@@ -28,7 +28,3 @@ CREATE INDEX IF NOT EXISTS idx_workflows_user_id ON workflows(user_id);
 CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
 
 CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
-
-CREATE INDEX IF NOT EXISTS idx_events_processed_at ON events(processed_at)
-WHERE
-    processed_at IS NULL;
