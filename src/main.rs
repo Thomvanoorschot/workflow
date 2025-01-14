@@ -11,7 +11,6 @@ use workflow::user_activity_workflow;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let storage = PostgresStorage::new("postgres://postgres:postgres@localhost/ariadne").await?;
-    storage.setup_database().await?;
 
     // Create a test user
     let user_id: Uuid = Uuid::new_v4();

@@ -4,7 +4,7 @@ use crate::workflow::storage::repositories::{
     PostgresEventRepository, PostgresUserRepository, PostgresWorkflowRepository,
 };
 use crate::workflow::storage::{EventRepository, Storage, UserRepository, WorkflowRepository};
-use sqlx::{Executor, PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 pub struct PostgresStorage {
@@ -15,48 +15,6 @@ impl PostgresStorage {
     pub async fn new(database_url: &str) -> Result<Self, StorageError> {
         let pool = PgPool::connect(database_url).await?;
         Ok(Self { pool })
-    }
-
-    pub async fn setup_database(&self) -> Result<(), StorageError> {
-        let drop_query = r#"
-            DROP TABLE IF EXISTS workflows CASCADE;
-            DROP TABLE IF EXISTS events CASCADE;
-            DROP TABLE IF EXISTS users CASCADE;
-        "#;
-        self.pool.execute(drop_query).await?;
-
-        let query = r#"
-            CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY,
-                name TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS workflows (
-                id UUID PRIMARY KEY,
-                user_id UUID NOT NULL REFERENCES users(id),
-                name TEXT NOT NULL,
-                data BYTEA NOT NULL,
-                status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'failed')),
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS events (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id),
-                event_type TEXT NOT NULL,
-                event_data JSONB NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_workflows_user_id ON workflows(user_id);
-            CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
-            CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
-        "#;
-
-        self.pool.execute(query).await?;
-        Ok(())
     }
 }
 
@@ -72,25 +30,9 @@ impl UserRepository for PostgresStorage {
 #[async_trait::async_trait]
 impl WorkflowRepository for PostgresStorage {
     async fn save_workflow(&self, workflow: &Workflow) -> Result<(), StorageError> {
-        let bytes = workflow.to_bytes()?;
-
-        sqlx::query(
-            "INSERT INTO workflows (id, user_id, name, data, status)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (id) DO UPDATE 
-             SET data = EXCLUDED.data,
-                 status = EXCLUDED.status,
-                 updated_at = CURRENT_TIMESTAMP",
-        )
-        .bind(workflow.id)
-        .bind(workflow.user_id)
-        .bind(&workflow.name)
-        .bind(&bytes)
-        .bind(workflow.status.to_string())
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
+        PostgresWorkflowRepository::new(&self.pool)
+            .save_workflow(workflow)
+            .await
     }
 
     async fn load_workflow(
@@ -98,20 +40,9 @@ impl WorkflowRepository for PostgresStorage {
         user_id: Uuid,
         workflow_id: Uuid,
     ) -> Result<Option<Workflow>, StorageError> {
-        let row = sqlx::query("SELECT data FROM workflows WHERE id = $1 AND user_id = $2")
-            .bind(workflow_id)
-            .bind(user_id)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        match row {
-            Some(row) => {
-                let bytes: Vec<u8> = row.get("data");
-                let workflow = Workflow::from_bytes(&bytes)?;
-                Ok(Some(workflow))
-            }
-            None => Ok(None),
-        }
+        PostgresWorkflowRepository::new(&self.pool)
+            .load_workflow(user_id, workflow_id)
+            .await
     }
 
     async fn get_active_workflows_for_user(
@@ -150,6 +81,6 @@ impl EventRepository for PostgresStorage {
 
 impl Storage for PostgresStorage {
     async fn setup_database(&self) -> Result<(), StorageError> {
-        self.setup_database().await
+        Ok(())
     }
 }
