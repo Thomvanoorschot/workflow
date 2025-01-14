@@ -1,6 +1,7 @@
 use crate::models::Workflow;
-use crate::workflow::storage::{StorageError, WorkflowRepository};
-use sqlx::{Executor, PgPool, Row};
+use crate::workflow::storage::error::StorageError;
+use crate::workflow::storage::WorkflowRepository;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 pub struct PostgresWorkflowRepository<'a> {
@@ -16,25 +17,23 @@ impl<'a> PostgresWorkflowRepository<'a> {
 #[async_trait::async_trait]
 impl<'a> WorkflowRepository for PostgresWorkflowRepository<'a> {
     async fn save_workflow(&self, workflow: &Workflow) -> Result<(), StorageError> {
-        let query = r#"
-            INSERT INTO workflows (id, user_id, name, nodes, status)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (id) DO UPDATE
-            SET nodes = $4,
-                status = $5,
-                updated_at = CURRENT_TIMESTAMP
-        "#;
+        let bytes = workflow.to_bytes()?;
 
-        self.pool
-            .execute(
-                sqlx::query(query)
-                    .bind(workflow.id)
-                    .bind(workflow.user_id)
-                    .bind(&workflow.name)
-                    .bind(serde_json::to_value(&workflow.nodes)?)
-                    .bind(workflow.status.to_string()),
-            )
-            .await?;
+        sqlx::query(
+            "INSERT INTO workflows (id, user_id, name, data, status)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE 
+             SET data = EXCLUDED.data,
+                 status = EXCLUDED.status,
+                 updated_at = CURRENT_TIMESTAMP",
+        )
+        .bind(workflow.id)
+        .bind(workflow.user_id)
+        .bind(&workflow.name)
+        .bind(&bytes)
+        .bind(workflow.status.to_string())
+        .execute(self.pool)
+        .await?;
 
         Ok(())
     }
@@ -44,28 +43,19 @@ impl<'a> WorkflowRepository for PostgresWorkflowRepository<'a> {
         user_id: Uuid,
         workflow_id: Uuid,
     ) -> Result<Option<Workflow>, StorageError> {
-        let query =
-            "SELECT id, user_id, name, nodes, status FROM workflows WHERE id = $1 AND user_id = $2";
-        let row = sqlx::query(query)
+        let row = sqlx::query("SELECT data FROM workflows WHERE id = $1 AND user_id = $2")
             .bind(workflow_id)
             .bind(user_id)
             .fetch_optional(self.pool)
             .await?;
 
-        if let Some(row) = row {
-            let nodes = serde_json::from_value(row.try_get("nodes")?)?;
-            Ok(Some(Workflow {
-                id: row.try_get("id")?,
-                user_id: row.try_get("user_id")?,
-                name: row.try_get("name")?,
-                nodes,
-                status: row
-                    .try_get::<String, _>("status")?
-                    .parse()
-                    .unwrap_or_default(),
-            }))
-        } else {
-            Ok(None)
+        match row {
+            Some(row) => {
+                let bytes: Vec<u8> = row.get("data");
+                let workflow = Workflow::from_bytes(&bytes)?;
+                Ok(Some(workflow))
+            }
+            None => Ok(None),
         }
     }
 
@@ -73,43 +63,34 @@ impl<'a> WorkflowRepository for PostgresWorkflowRepository<'a> {
         &self,
         user_id: Uuid,
     ) -> Result<Vec<Workflow>, StorageError> {
-        let query = "SELECT id, user_id, name, nodes, status FROM workflows WHERE user_id = $1 AND status = 'active'";
-        let rows = sqlx::query(query)
-            .bind(user_id)
-            .fetch_all(self.pool)
-            .await?;
+        let rows =
+            sqlx::query("SELECT data FROM workflows WHERE user_id = $1 AND status = 'active'")
+                .bind(user_id)
+                .fetch_all(self.pool)
+                .await?;
 
-        let workflows = rows
-            .into_iter()
-            .map(|row| {
-                let nodes = serde_json::from_value(row.try_get("nodes")?)?;
-                Ok(Workflow {
-                    id: row.try_get("id")?,
-                    user_id: row.try_get("user_id")?,
-                    name: row.try_get("name")?,
-                    nodes,
-                    status: row
-                        .try_get::<String, _>("status")?
-                        .parse()
-                        .unwrap_or_default(),
-                })
-            })
-            .collect::<Result<Vec<_>, StorageError>>()?;
+        let mut workflows = Vec::new();
+        for row in rows {
+            let bytes: Vec<u8> = row.get("data");
+            let workflow = Workflow::from_bytes(&bytes)?;
+            workflows.push(workflow);
+        }
 
         Ok(workflows)
     }
 
     async fn get_all_workflows(&self) -> Result<Vec<(Uuid, Uuid, String, String)>, StorageError> {
-        let query = "SELECT id, user_id, name, status FROM workflows ORDER BY created_at";
-        let rows = sqlx::query(query).fetch_all(self.pool).await?;
+        let rows = sqlx::query("SELECT id, user_id, name, status FROM workflows")
+            .fetch_all(self.pool)
+            .await?;
 
         let mut workflows = Vec::new();
         for row in rows {
             workflows.push((
-                row.try_get("id")?,
-                row.try_get("user_id")?,
-                row.try_get("name")?,
-                row.try_get("status")?,
+                row.get("id"),
+                row.get("user_id"),
+                row.get("name"),
+                row.get("status"),
             ));
         }
 

@@ -2,85 +2,115 @@ use crate::models::{
     edge::Edge,
     event::Event,
     gate::{Condition, Gate},
-    node::{Node, NodeId, NodeStatus},
-    workflow::{Workflow, WorkflowStatus},
+    node::{Node, NodeBehavior, NodeId, NodeStatus},
+    workflow::Workflow,
 };
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
-struct UserActivityCondition;
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserActivityCondition;
 
+#[typetag::serde]
 impl Condition for UserActivityCondition {
     fn evaluate(&self, event: &Event) -> bool {
         matches!(event, Event::UserActivity)
     }
+}
 
-    fn box_clone(&self) -> Box<dyn Condition> {
-        Box::new(self.clone())
-    }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TimerCondition {
+    timer_id: String,
+}
 
-    fn condition_type(&self) -> &'static str {
-        "user_activity"
-    }
-
-    fn condition_data(&self) -> Option<String> {
-        None
+impl TimerCondition {
+    pub fn new(timer_id: String) -> Self {
+        Self { timer_id }
     }
 }
 
-#[derive(Debug, Clone)]
-struct TimerCondition(String);
-
+#[typetag::serde]
 impl Condition for TimerCondition {
     fn evaluate(&self, event: &Event) -> bool {
-        matches!(event, Event::Timer { timer_id } if timer_id == &self.0)
-    }
-
-    fn box_clone(&self) -> Box<dyn Condition> {
-        Box::new(self.clone())
-    }
-
-    fn condition_type(&self) -> &'static str {
-        "timer"
-    }
-
-    fn condition_data(&self) -> Option<String> {
-        Some(self.0.clone())
+        matches!(event, Event::Timer { timer_id } if *timer_id == self.timer_id)
     }
 }
 
-pub fn create_demo_workflow_with_ids(id: Uuid, user_id: Uuid) -> Workflow {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EmptyBehavior;
+
+#[typetag::serde]
+impl NodeBehavior for EmptyBehavior {
+    fn on_activated(&self) -> Option<String> {
+        None
+    }
+
+    fn on_completed(&self) {}
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TimerNodeBehavior;
+
+#[typetag::serde]
+impl NodeBehavior for TimerNodeBehavior {
+    fn on_activated(&self) -> Option<String> {
+        Some("1".to_string())
+    }
+
+    fn on_completed(&self) {}
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FinishNodeBehavior;
+
+#[typetag::serde]
+impl NodeBehavior for FinishNodeBehavior {
+    fn on_activated(&self) -> Option<String> {
+        None
+    }
+
+    fn on_completed(&self) {
+        println!("FINISHED");
+    }
+}
+
+pub fn create_demo_workflow_with_ids(
+    user_activity_node_id: NodeId,
+    timer_node_id: NodeId,
+    finish_node_id: NodeId,
+) -> Workflow {
     let nodes = vec![
         Node {
-            name: "Start".to_string(),
+            id: user_activity_node_id,
+            name: "User Activity".to_string(),
             status: NodeStatus::Active,
             edges: vec![Edge {
-                source_node: NodeId(0),
-                target_node: NodeId(1),
-                gate: Gate::single(Box::new(UserActivityCondition)),
+                target: timer_node_id,
+                gate: Gate::Single(Box::new(UserActivityCondition)),
             }],
+            behavior: Box::new(EmptyBehavior),
         },
         Node {
-            name: "User Activity".to_string(),
-            status: NodeStatus::NotStarted,
-            edges: vec![Edge {
-                source_node: NodeId(1),
-                target_node: NodeId(2),
-                gate: Gate::single(Box::new(TimerCondition("1".to_string()))),
-            }],
-        },
-        Node {
+            id: timer_node_id,
             name: "Timer".to_string(),
             status: NodeStatus::NotStarted,
+            edges: vec![Edge {
+                target: finish_node_id,
+                gate: Gate::Single(Box::new(TimerCondition::new("1".to_string()))),
+            }],
+            behavior: Box::new(TimerNodeBehavior),
+        },
+        Node {
+            id: finish_node_id,
+            name: "Finish".to_string(),
+            status: NodeStatus::NotStarted,
             edges: vec![],
+            behavior: Box::new(FinishNodeBehavior),
         },
     ];
 
-    Workflow {
-        id,
-        user_id,
-        name: "Demo Workflow".to_string(),
-        nodes,
-        status: WorkflowStatus::Active,
-    }
+    Workflow::new(nodes)
+}
+
+pub fn create_demo_workflow() -> Workflow {
+    create_demo_workflow_with_ids(NodeId(0), NodeId(1), NodeId(2))
 }

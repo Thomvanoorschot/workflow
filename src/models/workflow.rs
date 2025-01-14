@@ -1,15 +1,7 @@
 use super::{Event, Node, NodeId, NodeStatus};
+use bincode::{DefaultOptions, Options};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Workflow {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub name: String,
-    pub nodes: Vec<Node>,
-    pub status: WorkflowStatus,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum WorkflowStatus {
@@ -28,12 +20,6 @@ impl ToString for WorkflowStatus {
     }
 }
 
-impl Default for WorkflowStatus {
-    fn default() -> Self {
-        WorkflowStatus::Active
-    }
-}
-
 impl std::str::FromStr for WorkflowStatus {
     type Err = String;
 
@@ -45,6 +31,15 @@ impl std::str::FromStr for WorkflowStatus {
             _ => Err(format!("Invalid workflow status: {}", s)),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Workflow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub nodes: Vec<Node>,
+    pub status: WorkflowStatus,
 }
 
 impl Workflow {
@@ -59,42 +54,83 @@ impl Workflow {
     }
 
     pub fn process_event(&mut self, event: &Event) {
-        let mut to_complete = Vec::new();
-        let mut to_activate = Vec::new();
+        // Start with all active nodes
+        let active_nodes: Vec<_> = self.nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.status == NodeStatus::Active)
+            .map(|(i, _)| i)
+            .collect();
 
-        // First pass: collect nodes to complete and activate
-        for (node_id, node) in self.nodes.iter().enumerate() {
-            if node.status == NodeStatus::Active {
-                if node.edges.is_empty() {
-                    to_complete.push(node_id);
-                    continue;
-                }
-
-                for edge in &node.edges {
-                    if edge.gate.evaluate(&self.nodes, event) {
-                        to_complete.push(node_id);
-                        to_activate.push(edge.target_node);
-                    }
-                }
-            }
+        // Process each active node recursively
+        for node_idx in active_nodes {
+            self.process_node(node_idx, event);
         }
 
-        // Second pass: update node statuses
-        for node_id in to_complete {
-            self.nodes[node_id].status = NodeStatus::Completed;
-        }
-
-        for node_id in to_activate {
-            self.nodes[node_id.0].status = NodeStatus::Active;
-            // If the activated node has no edges, complete it immediately
-            if self.nodes[node_id.0].edges.is_empty() {
-                self.nodes[node_id.0].status = NodeStatus::Completed;
-            }
-        }
-
-        // Check if all nodes are completed
-        if self.nodes.iter().all(|n| n.status == NodeStatus::Completed) {
+        // Check if workflow is completed
+        if self.nodes.iter().all(|node| node.status == NodeStatus::Completed) {
+            println!("Workflow completed!");
             self.status = WorkflowStatus::Completed;
         }
+    }
+
+    fn process_node(&mut self, node_idx: usize, event: &Event) {
+        // Complete nodes with no edges
+        if self.nodes[node_idx].edges.is_empty() {
+            self.nodes[node_idx].status = NodeStatus::Completed;
+            self.nodes[node_idx].behavior.on_completed();
+            return;
+        }
+
+        let mut all_edges_activated = true;
+        let mut any_edge_activated = false;
+
+        // Collect target indices first to avoid borrow issues
+        let mut targets = Vec::new();
+        for edge in &self.nodes[node_idx].edges {
+            if edge.gate.evaluate(&self.nodes, event) {
+                if let Some(target_idx) = self.nodes.iter().position(|n| n.id == edge.target) {
+                    if self.nodes[target_idx].status == NodeStatus::NotStarted {
+                        targets.push((target_idx, edge.target.0));
+                    }
+                }
+            } else {
+                all_edges_activated = false;
+            }
+        }
+
+        // Process collected targets
+        for (target_idx, target_id) in targets {
+            self.nodes[target_idx].status = NodeStatus::Active;
+            if let Some(timer_id) = self.nodes[target_idx].behavior.on_activated() {
+                println!("Timer node {} activated with ID {}", target_id, timer_id);
+            }
+            self.process_node(target_idx, event);
+            any_edge_activated = true;
+        }
+
+        // Complete node if all edges activated and at least one was activated
+        if all_edges_activated && any_edge_activated {
+            self.nodes[node_idx].status = NodeStatus::Completed;
+            self.nodes[node_idx].behavior.on_completed();
+        }
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, bincode::Error> {
+        let config = DefaultOptions::new()
+            .with_fixint_encoding()
+            .allow_trailing_bytes()
+            .with_native_endian()
+            .with_no_limit();
+        config.serialize(self)
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, bincode::Error> {
+        let config = DefaultOptions::new()
+            .with_fixint_encoding()
+            .allow_trailing_bytes()
+            .with_native_endian()
+            .with_no_limit();
+        config.deserialize(bytes)
     }
 }
