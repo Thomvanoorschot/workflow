@@ -73,11 +73,10 @@ impl NodeBehavior for FinishNodeBehavior {
     }
 }
 
-pub fn create_demo_workflow_with_ids(
-    user_activity_node_id: NodeId,
-    timer_node_id: NodeId,
-    finish_node_id: NodeId,
-) -> Workflow {
+pub fn create_demo_workflow() -> Workflow {
+    let user_activity_node_id = NodeId(0);
+    let timer_node_id = NodeId(1);
+    let finish_node_id = NodeId(2);
     let nodes = vec![
         Node {
             id: user_activity_node_id,
@@ -109,8 +108,4 @@ pub fn create_demo_workflow_with_ids(
     ];
 
     Workflow::new(nodes)
-}
-
-pub fn create_demo_workflow() -> Workflow {
-    create_demo_workflow_with_ids(NodeId(0), NodeId(1), NodeId(2))
 }

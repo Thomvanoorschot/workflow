@@ -6,8 +6,6 @@ use crate::models::{Event, Workflow};
 use error::StorageError;
 use uuid::Uuid;
 
-pub use postgres::PostgresStorage;
-
 #[async_trait::async_trait]
 pub trait UserRepository {
     async fn create_user(&self, user_id: Uuid, name: &str) -> Result<(), StorageError>;

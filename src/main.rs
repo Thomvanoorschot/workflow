@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     storage.setup_database().await?;
 
     // Create a test user
-    let user_id = Uuid::new_v4();
+    let user_id: Uuid = Uuid::new_v4();
     storage.create_user(user_id, "test user").await?;
 
     // Create and start workflow
